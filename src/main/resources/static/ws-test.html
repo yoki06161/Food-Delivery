@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebSocket Test</title>
+  
+  <!-- SockJS -->
+  <script src="https://unpkg.com/sockjs-client@1/dist/sockjs.min.js"></script>
+  <!-- StompJS (6.x 버전 사용) -->
+  <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@6.1.2/bundles/stomp.umd.min.js"></script>
+</head>
+<body>
+  <h1>WebSocket Test Page</h1>
+
+  <div id="deliveryUpdates"></div>
+
+  <script>
+    // Local Storage에서 토큰 가져오기
+    const token = localStorage.getItem('jwt'); 
+
+    // SockJS URL 설정
+    const socketUrl = 'http://localhost:8080/ws';
+
+    // StompJS 클라이언트 생성
+    const stompClient = new StompJs.Client({
+      // 웹소켓 팩토리 설정
+      webSocketFactory: () => new SockJS(socketUrl),
+      debug: function(str) {
+        console.log(str);
+      },
+      reconnectDelay: 5000, // 자동 재연결 시간
+      onConnect: function(frame) {
+        console.log('Connected: ' + frame);
+
+        // 배달 업데이트 정보 구독
+        stompClient.subscribe('/topic/deliveryUpdates', function(message) {
+          const update = JSON.parse(message.body);
+          console.log("Delivery Update:", update);
+          displayDeliveryUpdate(update);
+        });
+
+        // **주기적으로 라이더 위치 업데이트 전송**
+        const locationUpdateInterval = 5000; // 5초마다 업데이트
+        setInterval(() => {
+          const locationUpdate = {
+            riderId: 2,
+            latitude: getRandomLatitude(), // 임의의 위도 생성 함수
+            longitude: getRandomLongitude(), // 임의의 경도 생성 함수
+            status: "DELIVERING"
+          };
+          stompClient.publish({destination: "/app/location", body: JSON.stringify(locationUpdate)});
+          console.log("Sent location update:", locationUpdate);
+        }, locationUpdateInterval);
+      },
+      beforeConnect: function() {
+        // CONNECT 메시지 전에 Authorization 헤더 추가
+        return new Promise((resolve, reject) => {
+          resolve();
+        });
+      },
+      onWebSocketConnect: function() {
+        // CONNECT 메시지에 Authorization 헤더 추가
+        stompClient.connection.headers = {
+          'Authorization': 'Bearer ' + token
+        };
+      },
+      onStompError: function(frame) {
+        console.error('Broker reported error: ' + frame.headers['message']);
+        console.error('Additional details: ' + frame.body);
+      }
+    });
+
+    // 클라이언트 활성화
+    stompClient.activate();
+
+    // 배달 업데이트를 화면에 표시하는 함수
+    function displayDeliveryUpdate(update) {
+      const container = document.getElementById('deliveryUpdates');
+      const updateElement = document.createElement('div');
+      updateElement.textContent = `배달 ID: ${update.deliveryId}, 주문 ID: ${update.orderId}, 라이더 ID: ${update.riderId}, 상태: ${update.status}, 위치: ${update.currentLocation}, 시간: ${update.timestamp}`;
+      container.appendChild(updateElement);
+    }
+
+    // 임의의 위도 생성 함수
+    function getRandomLatitude() {
+      return (Math.random() * 180 - 90).toFixed(6);
+    }
+
+    // 임의의 경도 생성 함수
+    function getRandomLongitude() {
+      return (Math.random() * 360 - 180).toFixed(6);
+    }
+  </script>
+</body>
+</html>
